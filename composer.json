@@ -1,0 +1,19 @@
+{
+	"name": "axyr/silverstripe-redissession",
+	"description": "Uses Redis storing sessions",
+	"type": "silverstripe-module",
+	"license": "BSD-3-Clause",
+	"authors": [
+		{
+			"name": "Martijn van Nieuwenhoven",
+			"email": "info@axyrmedia.nl"
+		}
+	],
+	"require": {
+		"predis/predis": "*",
+		"silverstripe/framework": ">=3.0"
+	},
+	"extra": {
+		"installer-name": "redissessions"
+	}
+}
