@@ -13,8 +13,7 @@ namespace SilverStripe\Predis;
 
 use Predis\Client;
 
-class RedisSessionHandler
-{
+class RedisSessionHandler implements \SessionHandlerInterface {
 
     public $client;
 
@@ -26,54 +25,70 @@ class RedisSessionHandler
 
     public $key_sep = ':';
 
-    public function __construct($path = 'sessions', $prefix = 'PHPSESSID', $key_sep = ':')
-    {
+    public function __construct($path = 'sessions', $prefix = 'PHPSESSID', $key_sep = ':') {
         $this->client = new Client();
-        $this->ttl    = ini_get('session.gc_maxlifetime');
+        $this->ttl = ini_get('session.gc_maxlifetime');
 
-        $this->path    = $path;
-        $this->prefix  = $prefix;
+        $this->path = $path;
+        $this->prefix = $prefix;
         $this->key_sep = $key_sep;
 
         session_set_save_handler(
-            [$this, "open"],
-            [$this, "close"],
-            [$this, "read"],
-            [$this, "write"],
-            [$this, "destroy"],
-            [$this, "gc"]
+            array($this, "open"),
+            array($this, "close"),
+            array($this, "read"),
+            array($this, "write"),
+            array($this, "destroy"),
+            array($this, "gc")
         );
     }
 
-    function redisKeyPath()
-    {
+    /**
+     * Returns the full key path which Redis uses.
+     *
+     * @return string
+     */
+    private function redisKeyPath() {
         return $this->path . $this->key_sep . $this->prefix . $this->key_sep;
     }
 
     /**
-     * No action necessary because connection is injected
-     * in constructor and arguments are not applicable.
+     * No action necessary because connection is injected in constructor and arguments are not applicable.
+     *
+     * @param $savePath
+     * @param $sessionName
+     *
+     * @return bool
      */
-    public function open($savePath, $sessionName)
-    {
-
-    }
-
-    public function close()
-    {
-        $this->client = null;
-        unset($this->client);
+    public function open($savePath, $sessionName) {
+        return true;
     }
 
     /**
-     * Gets json_encoded Session data from Redis
-     * and encode it back to php's session encoding
+     * Clears the Predis Client.
+     *
+     * @return bool
      */
-    public function read($id)
-    {
+    public function close() {
+        $this->client = null;
+        unset($this->client);
+
+
+        return false;
+    }
+
+    /**
+     * Gets json_encoded Session data from Redis and encode it back to php's session encoding.
+     *
+     * @param $id
+     *
+     * @return string
+     */
+    public function read($id) {
+        if (!$this->client) return null;
 
         $tmp = $_SESSION;
-        $id  = $this->redisKeyPath() . $id;
+        $id = $this->redisKeyPath() . $id;
 
         $_SESSION = json_decode($this->client->get($id), true);
         $this->client->expire($id, $this->ttl);
@@ -81,6 +96,7 @@ class RedisSessionHandler
         if (isset($_SESSION) && !empty($_SESSION) && $_SESSION != null) {
             $new_data = session_encode();
             $_SESSION = $tmp;
+
             return $new_data;
         } else {
             return "";
@@ -88,31 +104,43 @@ class RedisSessionHandler
     }
 
     /**
-     * Writes Session json_encoded, so we can access the Session data with other clients like node.js
+     * Writes Session json_encoded, so we can access the Session data also with other clients (like node.js)
+     *
+     * @param $id Session ID
+     * @param $data Payload data.
+     *
+     * @return bool
      */
-    public function write($id, $data)
-    {
-        $tmp = $_SESSION;
-        session_decode($data);
-        $new_data = $_SESSION;
-        $_SESSION = $tmp;
+    public function write($id, $data) {
+        if (!$this->client) return false;
 
+        // Unserialize session data
+        $data = RedisSessionHelper::unserialize($data);
+
+        // Write payload to Redis and set expiration
         $id = $this->redisKeyPath() . $id;
-        $this->client->set($id, json_encode($new_data));
+        $this->client->set($id, json_encode($data));
         $this->client->expire($id, $this->ttl);
+
         return true;
     }
 
-    public function destroy($id)
-    {
-        $this->client->del($this->redisKeyPath() . $id);
+    /**
+     * Deletes a session by ID.
+     *
+     * @param $id Session ID
+     */
+    public function destroy($id) {
+        if ($this->client)
+            $this->client->del($this->redisKeyPath() . $id);
+
+        return true;
     }
 
     /**
      * No need to gc because of using expiration
+     *
+     * @param $maxLifetime
      */
-    public function gc($maxLifetime)
-    {
-
-    }
+    public function gc($maxLifetime) { }
 }
