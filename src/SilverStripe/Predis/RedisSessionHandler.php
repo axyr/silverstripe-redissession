@@ -13,7 +13,7 @@ namespace SilverStripe\Predis;
 
 use Predis\Client;
 
-class RedisSessionHandler {
+class RedisSessionHandler implements \SessionHandlerInterface {
 
     public $client;
 
@@ -57,15 +57,24 @@ class RedisSessionHandler {
      *
      * @param $savePath
      * @param $sessionName
+     *
+     * @return bool
      */
-    public function open($savePath, $sessionName) { }
+    public function open($savePath, $sessionName) {
+        return true;
+    }
 
     /**
      * Clears the Predis Client.
+     *
+     * @return bool
      */
     public function close() {
         $this->client = null;
         unset($this->client);
+
+
+        return false;
     }
 
     /**
@@ -105,15 +114,12 @@ class RedisSessionHandler {
     public function write($id, $data) {
         if (!$this->client) return false;
 
-        // Write payload data to session
-        $tmp = $_SESSION;
-        session_decode($data);
-        $new_data = $_SESSION;
-        $_SESSION = $tmp;
+        // Unserialize session data
+        $data = RedisSessionHelper::unserialize($data);
 
         // Write payload to Redis and set expiration
         $id = $this->redisKeyPath() . $id;
-        $this->client->set($id, json_encode($new_data));
+        $this->client->set($id, json_encode($data));
         $this->client->expire($id, $this->ttl);
 
         return true;
@@ -127,6 +133,8 @@ class RedisSessionHandler {
     public function destroy($id) {
         if ($this->client)
             $this->client->del($this->redisKeyPath() . $id);
+
+        return true;
     }
 
     /**
